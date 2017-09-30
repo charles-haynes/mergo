@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
 	"gopkg.in/yaml.v2"
 )
 
@@ -235,7 +236,7 @@ func TestSliceStruct(t *testing.T) {
 	if err := Merge(&a, b); err != nil {
 		t.FailNow()
 	}
-	if len(a.S) != 1 {
+	if len(a.S) != 4 {
 		t.FailNow()
 	}
 	if len(a.S) == len(b.S) {
