@@ -28,6 +28,7 @@ type moreComplextText struct {
 	Ct complexTest
 	St simpleTest
 	Nt simpleTest
+	Lt []simpleTest
 }
 
 type pointerTest struct {
@@ -343,7 +344,12 @@ func TestTwoPointerValues(t *testing.T) {
 func TestMap(t *testing.T) {
 	a := complexTest{}
 	a.ID = "athing"
-	c := moreComplextText{a, simpleTest{}, simpleTest{}}
+	c := moreComplextText{
+		Ct: a,
+		St: simpleTest{},
+		Nt: simpleTest{},
+		Lt: []simpleTest{{1}},
+	}
 	b := map[string]interface{}{
 		"ct": map[string]interface{}{
 			"st": map[string]interface{}{
@@ -355,9 +361,10 @@ func TestMap(t *testing.T) {
 		"st": &simpleTest{144}, // Mapping a reference
 		"zt": simpleTest{299},  // Mapping a missing field (zt doesn't exist)
 		"nt": simpleTest{3},
+		"lt": []simpleTest{{2}, {3}}, // Mapping a slice onto a non-empty slice
 	}
 	if err := Map(&c, b); err != nil {
-		t.FailNow()
+		t.Fatalf("Map error: %v", err)
 	}
 	m := b["ct"].(map[string]interface{})
 	n := m["st"].(map[string]interface{})
@@ -377,6 +384,18 @@ func TestMap(t *testing.T) {
 	}
 	if c.Ct.ID == m["id"] {
 		t.Fatalf("a's field ID merged unexpectedly: c.Ct.ID(%s) == b.Ct.ID(%s)", c.Ct.ID, m["id"])
+	}
+	if len(c.Lt) != 3 {
+		t.Fatalf("b not merged in properly: len(c.Lt) (%d) != 3", len(c.Lt))
+	}
+	if c.Lt[0].Value != 1 {
+		t.Fatalf("b not merged in properly: c.Lt[0] (%d) != 1", c.Lt[0].Value)
+	}
+	if c.Lt[1].Value != 2 {
+		t.Fatalf("b not merged in properly: c.Lt[1] (%d) != 2", c.Lt[1].Value)
+	}
+	if c.Lt[2].Value != 3 {
+		t.Fatalf("b not merged in properly: c.Lt[2] (%d) != 3", c.Lt[3].Value)
 	}
 }
 
