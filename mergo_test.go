@@ -314,6 +314,54 @@ func TestMaps(t *testing.T) {
 	}
 }
 
+func TestSlicesInMap(t *testing.T) {
+	type mii map[interface{}]interface{}
+	type is []interface{}
+	cases := []struct {
+		src, dst, exp mii
+	}{
+		{ // merge nonempty slices
+			src: mii{"key": is{"three", "four"}},
+			dst: mii{"key": is{"one", "two"}},
+			exp: mii{"key": is{"one", "two", "three", "four"}},
+		},
+		{ // multiple slices in the map, merge them all
+			src: mii{"key": is{"three", "four"}, "key2": is{"3", "4"}},
+			dst: mii{"key": is{"one", "two"}, "key2": is{"1", "2"}},
+			exp: mii{"key": is{"one", "two", "three", "four"}, "key2": is{"1", "2", "3", "4"}},
+		},
+		{ // merge a slice into something not a slice, keep existing
+			src: mii{"key": is{"5", "6"}},
+			dst: mii{"key": mii{"inner": "not a slice"}},
+			exp: mii{"key": mii{"inner": "not a slice"}},
+		},
+		{ // merge a non-slice into a slice, keep existing
+			src: mii{"key": mii{"inner": "not a slice"}},
+			dst: mii{"key": is{"7", "8"}},
+			exp: mii{"key": is{"7", "8"}},
+		},
+		{ // merge a nil slice into a non-empty slice, keep existing
+			src: mii{"key": is(nil)},
+			dst: mii{"key": is{"9", "10"}},
+			exp: mii{"key": is{"9", "10"}},
+		},
+		{ // merge a slice into a nil slice, set to new
+			src: mii{"key": is{"11", "12"}},
+			dst: mii{"key": is(nil)},
+			exp: mii{"key": is{"11", "12"}},
+		},
+	}
+	for _, c := range cases {
+		err := Merge(&c.dst, c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(c.dst, c.exp) {
+			t.Fatalf("Merge got %#v expected %#v", c.dst, c.exp)
+		}
+	}
+}
+
 func TestYAMLMaps(t *testing.T) {
 	thing := loadYAML("testdata/thing.yml")
 	license := loadYAML("testdata/license.yml")
