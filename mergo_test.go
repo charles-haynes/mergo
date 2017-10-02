@@ -378,6 +378,111 @@ func TestMergeIntoNilNestedMap(t *testing.T) {
 	}
 }
 
+func XTestMapZeroValues(t *testing.T) {
+	type mii map[interface{}]interface{}
+	type is []interface{}
+	type ft func()
+	type testCase struct {
+		name          string
+		src, dst, exp mii
+	}
+	var (
+		b   = true
+		c   testCase
+		ch              = make(chan int)
+		f   ft          = func() {}
+		f64             = float64(1.1)
+		i               = int(1)
+		n   interface{} = interface{}(1)
+		m               = map[string]interface{}{"a": 1}
+		s               = []int{1}
+	)
+	// merging a src into a zero value of its type should overwrite
+	cases := []testCase{
+		{
+			name: "bool",
+			src:  mii{"key": true},
+			dst:  mii{"key": false},
+			exp:  mii{"key": true},
+		},
+		{
+			name: "channel",
+			src:  mii{"key": ch},
+			dst:  mii{"key": chan int(nil)},
+			exp:  mii{"key": ch},
+		},
+		{
+			name: "float64",
+			src:  mii{"key": f64},
+			dst:  mii{"key": float64(0)},
+			exp:  mii{"key": f64},
+		},
+		{
+			name: "function",
+			src:  mii{"key": f},
+			dst:  mii{"key": ft(nil)},
+			exp:  mii{"key": f},
+		},
+		{
+			name: "int",
+			src:  mii{"key": 1},
+			dst:  mii{"key": 0},
+			exp:  mii{"key": 1},
+		},
+		{
+			name: "interface",
+			src:  mii{"key": n},
+			dst:  mii{"key": interface{}(nil)},
+			exp:  mii{"key": n},
+		},
+		{
+			name: "empty map",
+			src:  mii{"key": m},
+			dst:  mii{"key": map[string]interface{}{}},
+			exp:  mii{"key": m},
+		},
+		{
+			name: "nil map",
+			src:  mii{"key": m},
+			dst:  mii{"key": map[string]interface{}(nil)},
+			exp:  mii{"key": m},
+		},
+		{
+			name: "pointer",
+			src:  mii{"key": &i},
+			dst:  mii{"key": (*int)(nil)},
+			exp:  mii{"key": &i},
+		},
+		{
+			name: "slice",
+			src:  mii{"key": s},
+			dst:  mii{"key": []int(nil)},
+			exp:  mii{"key": s},
+		},
+		{
+			name: "string",
+			src:  mii{"key": "non empty"},
+			dst:  mii{"key": ""},
+			exp:  mii{"key": "non empty"},
+		},
+	}
+	defer func() {
+		if b {
+			t.Errorf("%s panicked", c.name)
+		}
+	}()
+	for _, c = range cases {
+		err := Merge(&c.dst, c.src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(c.dst, c.exp) {
+			t.Errorf("Merge of %s got %#v expected %#v", c.name, c.dst, c.exp)
+		}
+	}
+	b = false
+}
+
 func TestYAMLMaps(t *testing.T) {
 	thing := loadYAML("testdata/thing.yml")
 	license := loadYAML("testdata/license.yml")
