@@ -15,27 +15,14 @@ import (
 // Traverses recursively both values, assigning src's fields values to dst.
 // The map argument tracks comparisons that have already been seen, which allows
 // short circuiting on recursive types.
-func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, overwrite bool) (err error) {
+func deepMerge(dst, src reflect.Value, overwrite bool) (err error) {
 	if !src.IsValid() {
 		return
-	}
-	if dst.CanAddr() {
-		addr := dst.UnsafeAddr()
-		h := 17 * addr
-		seen := visited[h]
-		typ := dst.Type()
-		for p := seen; p != nil; p = p.next {
-			if p.ptr == addr && p.typ == typ {
-				return nil
-			}
-		}
-		// Remember, remember...
-		visited[h] = &visit{addr, typ, seen}
 	}
 	switch dst.Kind() {
 	case reflect.Struct:
 		for i, n := 0, dst.NumField(); i < n; i++ {
-			if err = deepMerge(dst.Field(i), src.Field(i), visited, depth+1, overwrite); err != nil {
+			if err = deepMerge(dst.Field(i), src.Field(i), overwrite); err != nil {
 				return
 			}
 		}
@@ -84,7 +71,7 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, ov
 						dst.SetMapIndex(key, srcElement)
 						continue
 					}
-					if err = deepMerge(dstElement, srcElement, visited, depth+1, overwrite); err != nil {
+					if err = deepMerge(dstElement, srcElement, overwrite); err != nil {
 						return
 					}
 				}
@@ -99,7 +86,7 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, ov
 			if dst.CanSet() && (overwrite || isEmptyValue(dst)) {
 				dst.Set(src)
 			}
-		} else if err = deepMerge(dst.Elem(), src.Elem(), visited, depth+1, overwrite); err != nil {
+		} else if err = deepMerge(dst.Elem(), src.Elem(), overwrite); err != nil {
 			return
 		}
 	case reflect.Slice:
@@ -145,5 +132,5 @@ func merge(dst, src interface{}, overwrite bool) error {
 	if vDst.Type() != vSrc.Type() {
 		return ErrDifferentArgumentsTypes
 	}
-	return deepMerge(vDst, vSrc, make(map[uintptr]*visit), 0, overwrite)
+	return deepMerge(vDst, vSrc, overwrite)
 }
