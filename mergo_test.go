@@ -362,6 +362,22 @@ func TestSlicesInMap(t *testing.T) {
 	}
 }
 
+func TestMergeIntoNilNestedMap(t *testing.T) {
+	type testMap map[interface{}]map[interface{}]interface{}
+	var (
+		v   map[interface{}]interface{}
+		src = testMap{"key": {"inner key": "value"}}
+		dst = testMap{"key": v}
+	)
+	err := Merge(&dst, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, src) {
+		t.Fatalf("Merge got %#v expected %#v", dst, src)
+	}
+}
+
 func TestYAMLMaps(t *testing.T) {
 	thing := loadYAML("testdata/thing.yml")
 	license := loadYAML("testdata/license.yml")

@@ -46,6 +46,12 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, ov
 				continue
 			}
 			dstElement := dst.MapIndex(key)
+			if !isEmptyValue(srcElement) && (overwrite || (!dstElement.IsValid() || isEmptyValue(dstElement))) {
+				if dst.IsNil() {
+					dst.Set(reflect.MakeMap(dst.Type()))
+				}
+				dst.SetMapIndex(key, srcElement)
+			}
 			switch srcElement.Kind() {
 			case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.Interface, reflect.Slice:
 				if srcElement.IsNil() {
@@ -74,16 +80,14 @@ func deepMerge(dst, src reflect.Value, visited map[uintptr]*visit, depth int, ov
 				case reflect.Ptr:
 					fallthrough
 				case reflect.Map:
+					if isEmptyValue(dstElement) {
+						dst.SetMapIndex(key, srcElement)
+						continue
+					}
 					if err = deepMerge(dstElement, srcElement, visited, depth+1, overwrite); err != nil {
 						return
 					}
 				}
-			}
-			if !isEmptyValue(srcElement) && (overwrite || (!dstElement.IsValid() || isEmptyValue(dst))) {
-				if dst.IsNil() {
-					dst.Set(reflect.MakeMap(dst.Type()))
-				}
-				dst.SetMapIndex(key, srcElement)
 			}
 		}
 	case reflect.Ptr:
