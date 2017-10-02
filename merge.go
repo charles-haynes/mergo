@@ -15,15 +15,15 @@ import (
 // Traverses recursively both values, assigning src's fields values to dst.
 // The map argument tracks comparisons that have already been seen, which allows
 // short circuiting on recursive types.
-func deepMerge(dst, src reflect.Value, overwrite bool) (err error) {
+func deepMerge(dst, src reflect.Value, overwrite bool) error {
 	if !src.IsValid() {
-		return
+		return nil
 	}
 	switch dst.Kind() {
 	case reflect.Struct:
 		for i, n := 0, dst.NumField(); i < n; i++ {
-			if err = deepMerge(dst.Field(i), src.Field(i), overwrite); err != nil {
-				return
+			if err := deepMerge(dst.Field(i), src.Field(i), overwrite); err != nil {
+				return err
 			}
 		}
 	case reflect.Map:
@@ -71,8 +71,8 @@ func deepMerge(dst, src reflect.Value, overwrite bool) (err error) {
 						dst.SetMapIndex(key, srcElement)
 						continue
 					}
-					if err = deepMerge(dstElement, srcElement, overwrite); err != nil {
-						return
+					if err := deepMerge(dstElement, srcElement, overwrite); err != nil {
+						return err
 					}
 				}
 			}
@@ -86,8 +86,8 @@ func deepMerge(dst, src reflect.Value, overwrite bool) (err error) {
 			if dst.CanSet() && (overwrite || isEmptyValue(dst)) {
 				dst.Set(src)
 			}
-		} else if err = deepMerge(dst.Elem(), src.Elem(), overwrite); err != nil {
-			return
+		} else if err := deepMerge(dst.Elem(), src.Elem(), overwrite); err != nil {
+			return err
 		}
 	case reflect.Slice:
 		if dst.CanSet() &&
@@ -104,7 +104,7 @@ func deepMerge(dst, src reflect.Value, overwrite bool) (err error) {
 			dst.Set(src)
 		}
 	}
-	return
+	return nil
 }
 
 // Merge will fill any empty for value type attributes on the dst struct using corresponding

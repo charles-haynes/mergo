@@ -31,7 +31,7 @@ func isExported(field reflect.StructField) bool {
 // Traverses recursively both values, assigning src's fields values to dst.
 // The map argument tracks comparisons that have already been seen, which allows
 // short circuiting on recursive types.
-func deepMap(dst, src reflect.Value, overwrite bool) (err error) {
+func deepMap(dst, src reflect.Value, overwrite bool) error {
 	zeroValue := reflect.Value{}
 	switch dst.Kind() {
 	case reflect.Map:
@@ -76,13 +76,13 @@ func deepMap(dst, src reflect.Value, overwrite bool) (err error) {
 				continue
 			}
 			if srcKind == dstKind {
-				if err = deepMerge(dstElement, srcElement, overwrite); err != nil {
-					return
+				if err := deepMerge(dstElement, srcElement, overwrite); err != nil {
+					return err
 				}
 			} else {
 				if srcKind == reflect.Map {
-					if err = deepMap(dstElement, srcElement, overwrite); err != nil {
-						return
+					if err := deepMap(dstElement, srcElement, overwrite); err != nil {
+						return err
 					}
 				} else {
 					return fmt.Errorf("type mismatch on %s field: found %v, expected %v", fieldName, srcKind, dstKind)
@@ -90,7 +90,7 @@ func deepMap(dst, src reflect.Value, overwrite bool) (err error) {
 			}
 		}
 	}
-	return
+	return nil
 }
 
 // Map sets fields' values in dst from src.
