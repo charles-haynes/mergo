@@ -32,7 +32,6 @@ func isExported(field reflect.StructField) bool {
 // The map argument tracks comparisons that have already been seen, which allows
 // short circuiting on recursive types.
 func deepMap(dst, src reflect.Value, overwrite bool) error {
-	zeroValue := reflect.Value{}
 	switch dst.Kind() {
 	case reflect.Map:
 		dstMap := dst.Interface().(map[string]interface{})
@@ -54,7 +53,7 @@ func deepMap(dst, src reflect.Value, overwrite bool) error {
 			srcValue := srcMap[key]
 			fieldName := changeInitialCase(key, unicode.ToUpper)
 			dstElement := dst.FieldByName(fieldName)
-			if dstElement == zeroValue {
+			if !dstElement.IsValid() {
 				// We discard it because the field doesn't exist.
 				continue
 			}

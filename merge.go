@@ -16,93 +16,82 @@ import (
 // The map argument tracks comparisons that have already been seen, which allows
 // short circuiting on recursive types.
 func deepMerge(dst, src reflect.Value, overwrite bool) error {
-	if !src.IsValid() {
-		return nil
+	mergeable := func(k reflect.Kind) bool {
+		switch k {
+		case reflect.Map, reflect.Slice:
+			return true
+		case reflect.Ptr, reflect.Interface:
+			return false // for now
+		}
+		return false
 	}
-	switch dst.Kind() {
-	case reflect.Struct:
+
+	mergeStructs := func(dst, src reflect.Value) error {
 		for i, n := 0, dst.NumField(); i < n; i++ {
 			if err := deepMerge(dst.Field(i), src.Field(i), overwrite); err != nil {
 				return err
 			}
 		}
-	case reflect.Map:
+		return nil
+	}
+
+	mergeMaps := func(dst, src reflect.Value) error {
+		// src.Type() == dst.Type()
 		for _, key := range src.MapKeys() {
 			srcElement := src.MapIndex(key)
-			if !srcElement.IsValid() {
+			if !srcElement.IsValid() || isEmptyValue(srcElement) {
 				continue
 			}
 			dstElement := dst.MapIndex(key)
-			if !isEmptyValue(srcElement) && (overwrite || (!dstElement.IsValid() || isEmptyValue(dstElement))) {
-				if dst.IsNil() {
-					dst.Set(reflect.MakeMap(dst.Type()))
-				}
+			if !dstElement.IsValid() || isEmptyValue(dstElement) || overwrite {
 				dst.SetMapIndex(key, srcElement)
+				continue
 			}
+			if !srcElement.CanInterface() {
+				continue
+			}
+			srcElement = reflect.ValueOf(srcElement.Interface())
+			dstElement = reflect.ValueOf(dstElement.Interface())
 			switch srcElement.Kind() {
-			case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.Interface, reflect.Slice:
-				if srcElement.IsNil() {
+			case reflect.Slice:
+				if dstElement.Kind() != reflect.Slice {
 					continue
 				}
-				fallthrough
-			default:
-				if !srcElement.CanInterface() {
-					continue
-				}
-				switch reflect.TypeOf(srcElement.Interface()).Kind() {
-				case reflect.Slice:
-					if !overwrite {
-						if reflect.TypeOf(dstElement.Interface()).Kind() != reflect.Slice {
-							continue
-						}
-						r := reflect.AppendSlice(
-							reflect.ValueOf(dstElement.Interface()),
-							reflect.ValueOf(srcElement.Interface()))
-						dst.SetMapIndex(key, r)
-						continue
-					}
-					fallthrough
-				case reflect.Struct:
-					fallthrough
-				case reflect.Ptr:
-					fallthrough
-				case reflect.Map:
-					if isEmptyValue(dstElement) {
-						dst.SetMapIndex(key, srcElement)
-						continue
-					}
-					if err := deepMerge(dstElement, srcElement, overwrite); err != nil {
-						return err
-					}
+				dst.SetMapIndex(key, reflect.AppendSlice(dstElement, srcElement))
+			case reflect.Struct, reflect.Ptr, reflect.Map:
+				if err := deepMerge(dstElement, srcElement, overwrite); err != nil {
+					return err
 				}
 			}
 		}
-	case reflect.Ptr:
-		fallthrough
-	case reflect.Interface:
-		if src.IsNil() {
-			break
-		} else if dst.IsNil() || overwrite {
-			if dst.CanSet() && (overwrite || isEmptyValue(dst)) {
-				dst.Set(src)
-			}
-		} else if err := deepMerge(dst.Elem(), src.Elem(), overwrite); err != nil {
-			return err
+		return nil
+	}
+
+	if !src.IsValid() || !dst.IsValid() || isEmptyValue(src) {
+		return nil
+	}
+
+	if src.Type() != dst.Type() && (!mergeable(src.Kind()) || !mergeable(dst.Kind())) {
+		return ErrDifferentArgumentsTypes
+	}
+
+	switch dst.Kind() {
+	case reflect.Struct:
+		return mergeStructs(dst, src)
+	case reflect.Map:
+		return mergeMaps(dst, src)
+	case reflect.Ptr, reflect.Interface:
+		if !overwrite && !isEmptyValue(dst) {
+			return deepMerge(dst.Elem(), src.Elem(), overwrite)
 		}
 	case reflect.Slice:
-		if dst.CanSet() &&
-			!isEmptyValue(src) &&
-			(!overwrite && !isEmptyValue(dst)) &&
-			src.Kind() == reflect.Slice &&
-			src.Type().Elem() == dst.Type().Elem() {
+		if dst.CanSet() && !overwrite && !isEmptyValue(dst) {
 			dst.Set(reflect.AppendSlice(dst, src))
-			break
+			return nil
 		}
-		fallthrough
-	default:
-		if dst.CanSet() && !isEmptyValue(src) && (overwrite || isEmptyValue(dst)) {
-			dst.Set(src)
-		}
+	}
+	if dst.CanSet() && (overwrite || isEmptyValue(dst)) {
+		dst.Set(src)
 	}
 	return nil
 }
