@@ -22,14 +22,15 @@ var (
 	ErrExpectedStructAsDestination = errors.New("dst was expected to be a struct")
 )
 
-// During deepMerge, must keep track of checks that are
-// in progress.  The comparison algorithm assumes that all
-// checks in progress are true when it reencounters them.
-// Visited are stored in a map indexed by 17 * a1 + a2;
+// Taken from reflect.DeepEqual
+// During deepMerge, must keep track of all merges  that are
+// in progress. The merge algorithm assumes that all
+// merges in progress are complete when it reencounters them.
+// Visited merges are stored in a map indexed by visit.
 type visit struct {
-	ptr  uintptr
-	typ  reflect.Type
-	next *visit
+	a1  uintptr
+	a2  uintptr
+	typ reflect.Type
 }
 
 // From src/pkg/encoding/json.
@@ -45,7 +46,7 @@ func isEmptyValue(v reflect.Value) bool {
 		return v.Uint() == 0
 	case reflect.Float32, reflect.Float64:
 		return v.Float() == 0
-	case reflect.Interface, reflect.Ptr:
+	case reflect.Interface, reflect.Ptr, reflect.Chan, reflect.Func:
 		return v.IsNil()
 	}
 	return false
@@ -67,24 +68,4 @@ func resolveValues(dst, src interface{}) (vDst, vSrc reflect.Value, err error) {
 		vSrc = vSrc.Elem()
 	}
 	return
-}
-
-// Traverses recursively both values, assigning src's fields values to dst.
-// The map argument tracks comparisons that have already been seen, which allows
-// short circuiting on recursive types.
-func deeper(dst, src reflect.Value, visited map[uintptr]*visit, depth int) (err error) {
-	if dst.CanAddr() {
-		addr := dst.UnsafeAddr()
-		h := 17 * addr
-		seen := visited[h]
-		typ := dst.Type()
-		for p := seen; p != nil; p = p.next {
-			if p.ptr == addr && p.typ == typ {
-				return nil
-			}
-		}
-		// Remember, remember...
-		visited[h] = &visit{addr, typ, seen}
-	}
-	return // TODO refactor
 }

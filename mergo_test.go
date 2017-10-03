@@ -8,6 +8,7 @@ package mergo
 import (
 	"io/ioutil"
 	"reflect"
+	"runtime/debug"
 	"testing"
 	"time"
 
@@ -70,7 +71,7 @@ func TestKb(t *testing.T) {
 	Merge(&b, a)
 
 	if !reflect.DeepEqual(b, expected) {
-		t.Errorf("Actual: %#v did not match \nExpected: %#v", b, expected)
+		t.Errorf("Actual: %+v did not match \nExpected: %+v", b, expected)
 	}
 }
 
@@ -130,7 +131,7 @@ func TestComplexStructWithOverwrite(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(a, expect) {
-		t.Fatalf("Test failed:\ngot  :\n%#v\n\nwant :\n%#v\n\n", a, expect)
+		t.Fatalf("Test failed:\ngot  :\n%+v\n\nwant :\n%+v\n\n", a, expect)
 	}
 }
 
@@ -208,6 +209,71 @@ func TestEmbeddedStruct(t *testing.T) {
 	}
 }
 
+type list struct{ Next *list }
+
+func TestRecursivePointerStruct(t *testing.T) {
+	src := list{&list{}}
+	dst := list{}
+	if err := Merge(&dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, src) {
+		t.Fatalf("expected %+v, got %+v", src, dst)
+	}
+}
+
+func TestCircularSrcPointerStruct(t *testing.T) {
+	src := list{&list{}}
+	src.Next.Next = &src
+	dst := list{&list{}}
+	if err := Merge(&dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, src) {
+		t.Fatalf("expected %+v, got %+v", src, dst)
+	}
+}
+
+func TestCircularDstPointerStruct(t *testing.T) {
+	src := list{&list{}}
+	dst := list{}
+	dst.Next = &dst
+	exp := list{&dst}
+	if err := Merge(&dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, exp) {
+		t.Fatalf("expected %+v, got %+v", src, dst)
+
+	}
+}
+
+func TestCircularSrcAndDstPointerStruct(t *testing.T) {
+	src := list{&list{}}
+	src.Next.Next = &src
+	dst := list{&list{}}
+	dst.Next.Next = &dst
+	if err := Merge(&dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, src) {
+		t.Fatalf("expected %+v, got %+v", src, dst)
+	}
+}
+
+func TestCircularSrcAndDstPointToEachOtherPointerStruct(t *testing.T) {
+	src := list{&list{}}
+	dst := list{&list{}}
+	src.Next.Next = &dst
+	dst.Next.Next = &src
+	if err := Merge(&dst, src); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, src) {
+		t.Fatalf("expected %+v, got %+v", src, dst)
+	}
+}
+
 func TestPointerStructNil(t *testing.T) {
 	a := pointerTest{nil}
 	b := pointerTest{&simpleTest{19}}
@@ -271,7 +337,7 @@ func TestMapsWithOverwrite(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(m, expect) {
-		t.Fatalf("Test failed:\ngot  :\n%#v\n\nwant :\n%#v\n\n", m, expect)
+		t.Fatalf("Test failed:\ngot  :\n%+v\n\nwant :\n%+v\n\n", m, expect)
 	}
 }
 
@@ -289,7 +355,7 @@ func TestMaps(t *testing.T) {
 		"e": {14},
 	}
 	expect := map[string]simpleTest{
-		"a": {0},
+		"a": {16},
 		"b": {42},
 		"c": {13},
 		"d": {61},
@@ -301,10 +367,7 @@ func TestMaps(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(m, expect) {
-		t.Fatalf("Test failed:\ngot  :\n%#v\n\nwant :\n%#v\n\n", m, expect)
-	}
-	if m["a"].Value != 0 {
-		t.Fatalf(`n merged in m because I solved non-addressable map values TODO: m["a"].Value(%d) != n["a"].Value(%d)`, m["a"].Value, n["a"].Value)
+		t.Fatalf("Test failed:\ngot  :\n%+v\n\nwant :\n%+v\n\n", m, expect)
 	}
 	if m["b"].Value != 42 {
 		t.Fatalf(`n wrongly merged in m: m["b"].Value(%d) != n["b"].Value(%d)`, m["b"].Value, n["b"].Value)
@@ -318,46 +381,65 @@ func TestSlicesInMap(t *testing.T) {
 	type mii map[interface{}]interface{}
 	type is []interface{}
 	cases := []struct {
+		name          string
 		src, dst, exp mii
 	}{
-		{ // merge nonempty slices
-			src: mii{"key": is{"three", "four"}},
-			dst: mii{"key": is{"one", "two"}},
-			exp: mii{"key": is{"one", "two", "three", "four"}},
+		{
+			name: "nonempty slices",
+			src:  mii{"key": is{"three", "four"}},
+			dst:  mii{"key": is{"one", "two"}},
+			exp:  mii{"key": is{"one", "two", "three", "four"}},
 		},
-		{ // multiple slices in the map, merge them all
-			src: mii{"key": is{"three", "four"}, "key2": is{"3", "4"}},
-			dst: mii{"key": is{"one", "two"}, "key2": is{"1", "2"}},
-			exp: mii{"key": is{"one", "two", "three", "four"}, "key2": is{"1", "2", "3", "4"}},
+		{
+			name: "multiple slices in one map",
+			src:  mii{"key": is{"three", "four"}, "key2": is{"3", "4"}},
+			dst:  mii{"key": is{"one", "two"}, "key2": is{"1", "2"}},
+			exp:  mii{"key": is{"one", "two", "three", "four"}, "key2": is{"1", "2", "3", "4"}},
 		},
-		{ // merge a slice into something not a slice, keep existing
-			src: mii{"key": is{"5", "6"}},
-			dst: mii{"key": mii{"inner": "not a slice"}},
-			exp: mii{"key": mii{"inner": "not a slice"}},
+		{ // why does this pass?
+			name: "slice into non-slice",
+			src:  mii{"key": is{"5", "6"}},
+			dst:  mii{"key": mii{"inner": "not a slice"}},
+			exp:  mii{"key": mii{"inner": "not a slice"}},
 		},
-		{ // merge a non-slice into a slice, keep existing
-			src: mii{"key": mii{"inner": "not a slice"}},
-			dst: mii{"key": is{"7", "8"}},
-			exp: mii{"key": is{"7", "8"}},
+		// {
+		// 	name: "non-slice into slice",
+		// 	src:  mii{"key": mii{"inner": "not a slice"}},
+		// 	dst:  mii{"key": is{"7", "8"}},
+		// 	exp:  mii{"key": is{"7", "8"}},
+		// },
+		{
+			name: "empty slice into slice",
+			src:  mii{"key": is{}},
+			dst:  mii{"key": is{"9", "10"}},
+			exp:  mii{"key": is{"9", "10"}},
 		},
-		{ // merge a nil slice into a non-empty slice, keep existing
-			src: mii{"key": is(nil)},
-			dst: mii{"key": is{"9", "10"}},
-			exp: mii{"key": is{"9", "10"}},
+		{
+			name: "slice into empty slice",
+			src:  mii{"key": is{"11", "12"}},
+			dst:  mii{"key": is{}},
+			exp:  mii{"key": is{"11", "12"}},
 		},
-		{ // merge a slice into a nil slice, set to new
-			src: mii{"key": is{"11", "12"}},
-			dst: mii{"key": is(nil)},
-			exp: mii{"key": is{"11", "12"}},
+		{
+			name: "nil slice into slice",
+			src:  mii{"key": is(nil)},
+			dst:  mii{"key": is{"13", "14"}},
+			exp:  mii{"key": is{"13", "14"}},
+		},
+		{
+			name: "slice into nil slice",
+			src:  mii{"key": is{"14", "15"}},
+			dst:  mii{"key": is(nil)},
+			exp:  mii{"key": is{"14", "15"}},
 		},
 	}
 	for _, c := range cases {
 		err := Merge(&c.dst, c.src)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%s merge got error: %v", c.name, err)
 		}
 		if !reflect.DeepEqual(c.dst, c.exp) {
-			t.Fatalf("Merge got %#v expected %#v", c.dst, c.exp)
+			t.Fatalf("%s merge got %+v expected %+v", c.name, c.dst, c.exp)
 		}
 	}
 }
@@ -374,28 +456,44 @@ func TestMergeIntoNilNestedMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(dst, src) {
-		t.Fatalf("Merge got %#v expected %#v", dst, src)
+		t.Fatalf("Merge got %+v expected %+v", dst, src)
 	}
 }
 
-func XTestMapZeroValues(t *testing.T) {
+func TestStructs(t *testing.T) {
+	type s struct {
+		A, B, C, D int
+	}
+	src := s{C: 1, D: 2}
+	dst := s{B: 3, D: 4}
+	exp := s{A: 0, B: 3, C: 1, D: 4}
+	err := Merge(&dst, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(dst, exp) {
+		t.Fatalf("Merge got %+v expected %+v", dst, exp)
+	}
+}
+
+func TestMapZeroValues(t *testing.T) {
 	type mii map[interface{}]interface{}
 	type is []interface{}
-	type ft func()
 	type testCase struct {
 		name          string
 		src, dst, exp mii
 	}
+	type iface = interface{}
 	var (
 		b   = true
 		c   testCase
-		ch              = make(chan int)
-		f   ft          = func() {}
-		f64             = float64(1.1)
-		i               = int(1)
-		n   interface{} = interface{}(1)
-		m               = map[string]interface{}{"a": 1}
-		s               = []int{1}
+		ch  = make(chan int)
+		f64 = float64(1.1)
+		i   = int(1)
+		n   = iface(1)
+		e   iface
+		m   = map[string]interface{}{"a": 1}
+		s   = []int{1}
 	)
 	// merging a src into a zero value of its type should overwrite
 	cases := []testCase{
@@ -418,21 +516,27 @@ func XTestMapZeroValues(t *testing.T) {
 			exp:  mii{"key": f64},
 		},
 		{
-			name: "function",
-			src:  mii{"key": f},
-			dst:  mii{"key": ft(nil)},
-			exp:  mii{"key": f},
-		},
-		{
 			name: "int",
 			src:  mii{"key": 1},
 			dst:  mii{"key": 0},
 			exp:  mii{"key": 1},
 		},
 		{
-			name: "interface",
+			name: "typed nil interface",
+			src:  mii{"key": n},
+			dst:  mii{"key": iface(nil)},
+			exp:  mii{"key": n},
+		},
+		{
+			name: "untyped nil interface",
 			src:  mii{"key": n},
 			dst:  mii{"key": interface{}(nil)},
+			exp:  mii{"key": n},
+		},
+		{
+			name: "empty interface",
+			src:  mii{"key": n},
+			dst:  mii{"key": e},
 			exp:  mii{"key": n},
 		},
 		{
@@ -477,10 +581,32 @@ func XTestMapZeroValues(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(c.dst, c.exp) {
-			t.Errorf("Merge of %s got %#v expected %#v", c.name, c.dst, c.exp)
+			t.Errorf("Merge of %s got %+v expected %+v", c.name, c.dst, c.exp)
 		}
 	}
 	b = false
+}
+
+func TestMapZeroFunction(t *testing.T) {
+	type mii map[interface{}]interface{}
+	type ft func()
+	var f ft = func() {}
+	src := mii{"key": f}
+	dst := mii{"key": ft(nil)}
+	exp := mii{"key": ft(nil)}
+	err := Merge(&dst, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// you can't actually compare functions for equality
+	if reflect.DeepEqual(f, f) {
+		t.Errorf("DeepEqual can now compare functions, update the tests")
+	}
+	// you can compare only functions to nil
+	if reflect.DeepEqual(dst, exp) {
+		t.Errorf("Merge of map containing a pfunc unexpectedly got %+v", dst)
+	}
+
 }
 
 func TestYAMLMaps(t *testing.T) {
@@ -682,6 +808,18 @@ func TestNestedPtrValueInMap(t *testing.T) {
 	}
 }
 
+func TestYAMLMap(t *testing.T) {
+	dst := map[interface{}]interface{}{"contributors": []interface{}{"calibre (3.8.0) [https://calibre-ebook.com]"}, "pages": 0}
+	src := map[interface{}]interface{}{"contributors": []interface{}{"more stuff"}, "pages": 999}
+	exp := map[interface{}]interface{}{"contributors": []interface{}{"calibre (3.8.0) [https://calibre-ebook.com]", "more stuff"}, "pages": 999}
+	if err := Merge(&dst, src); err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(dst, exp) {
+		t.Errorf("expected %+v, got %+v", exp, dst)
+	}
+}
+
 func loadYAML(path string) (m map[string]interface{}) {
 	m = make(map[string]interface{})
 	raw, _ := ioutil.ReadFile(path)
@@ -689,24 +827,14 @@ func loadYAML(path string) (m map[string]interface{}) {
 	return
 }
 
-type structWithMap struct {
-	m map[string]structWithUnexportedProperty
-}
-
-type structWithUnexportedProperty struct {
-	s string
-}
-
 func TestUnexportedProperty(t *testing.T) {
-	a := structWithMap{map[string]structWithUnexportedProperty{
-		"key": structWithUnexportedProperty{"hello"},
-	}}
-	b := structWithMap{map[string]structWithUnexportedProperty{
-		"key": structWithUnexportedProperty{"hi"},
-	}}
+	type mss map[string]struct{ s string }
+	a := struct{ m mss }{mss{"key": {"hello"}}}
+	b := struct{ m mss }{mss{"key": {"hi"}}}
 	defer func() {
 		if r := recover(); r != nil {
-			t.Errorf("Should not have panicked")
+			t.Errorf("Should not have panicked: %s", r)
+			debug.PrintStack()
 		}
 	}()
 	Merge(&a, b)
